@@ -1,8 +1,8 @@
 [package]
 name = "photo-picker-pro"
 version = "0.1.0"
-description = "Professional wedding photo selection tool"
-authors = ["PhotoPicker Team"]
+description = "照片选片工具"
+authors = ["akimixu"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
