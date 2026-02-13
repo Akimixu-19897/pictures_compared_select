@@ -43,6 +43,12 @@ const photosWithUrl = computed(() =>
         @click="emit('select', photo.id, $event)"
         @dblclick="emit('double-click', photo.id)"
       >
+        <div
+          v-if="photo.movedOut"
+          class="absolute top-1.5 right-1.5 z-10 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-sm text-white text-[11px] font-medium"
+        >
+          已移动
+        </div>
         <img :src="imageUrl" :alt="photo.name" class="w-full h-full object-cover" loading="lazy" />
         <div v-if="props.selectedId === photo.id" class="absolute inset-0 bg-danger/10 pointer-events-none" />
         <div class="absolute inset-0 bg-black/20 pointer-events-none" />

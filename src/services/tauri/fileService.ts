@@ -63,6 +63,7 @@ export async function exportPhotos(
 
 export type MovePhotosResult = {
   moved: number;
+  moved_entries: Array<{ from: string; to: string }>;
   failed: Array<{ path: string; reason: string }>;
 };
 
@@ -82,6 +83,23 @@ export async function movePhotosToSiblingFolder(
     });
   } catch (error) {
     console.error('Failed to move photos:', error);
+    throw error;
+  }
+}
+
+export async function restorePhotosFromSiblingFolder(
+  photoPaths: string[],
+  importDir: string,
+  siblingFolderName: string
+): Promise<MovePhotosResult> {
+  try {
+    return await invoke('restore_photos_from_sibling_folder', {
+      photoPaths,
+      importDir,
+      siblingFolderName,
+    });
+  } catch (error) {
+    console.error('Failed to restore photos:', error);
     throw error;
   }
 }

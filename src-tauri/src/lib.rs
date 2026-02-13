@@ -120,8 +120,15 @@ struct MoveFailure {
 }
 
 #[derive(Debug, Serialize)]
+struct MoveEntry {
+  from: String,
+  to: String,
+}
+
+#[derive(Debug, Serialize)]
 struct MoveResult {
   moved: usize,
+  moved_entries: Vec<MoveEntry>,
   failed: Vec<MoveFailure>,
 }
 
@@ -181,6 +188,7 @@ async fn move_photos_to_sibling_folder(
     .map_err(|e| format!("创建目标文件夹失败（{}）: {e}", dest_dir.display()))?;
 
   let mut moved = 0usize;
+  let mut moved_entries: Vec<MoveEntry> = Vec::new();
   let mut failed: Vec<MoveFailure> = Vec::new();
 
   for path in photo_paths {
@@ -221,12 +229,22 @@ async fn move_photos_to_sibling_folder(
     match std::fs::rename(&src_canon, &dest_path) {
       Ok(()) => {
         moved += 1;
+        moved_entries.push(MoveEntry {
+          from: path,
+          to: dest_path.to_string_lossy().to_string(),
+        });
       }
       Err(rename_err) => {
         // Cross-device move or permissions: fallback to copy + delete
         match std::fs::copy(&src_canon, &dest_path) {
           Ok(_) => match std::fs::remove_file(&src_canon) {
-            Ok(_) => moved += 1,
+            Ok(_) => {
+              moved += 1;
+              moved_entries.push(MoveEntry {
+                from: path,
+                to: dest_path.to_string_lossy().to_string(),
+              });
+            }
             Err(e) => {
               failed.push(MoveFailure {
                 path,
@@ -245,7 +263,106 @@ async fn move_photos_to_sibling_folder(
     }
   }
 
-  Ok(MoveResult { moved, failed })
+  Ok(MoveResult {
+    moved,
+    moved_entries,
+    failed,
+  })
+}
+
+#[tauri::command]
+async fn restore_photos_from_sibling_folder(
+  photo_paths: Vec<String>,
+  import_dir: String,
+  sibling_folder_name: String,
+) -> Result<MoveResult, String> {
+  let import_dir_path = PathBuf::from(import_dir);
+  let import_dir_canon = import_dir_path
+    .canonicalize()
+    .map_err(|e| format!("导入目录不可用: {e}"))?;
+
+  let parent = import_dir_canon
+    .parent()
+    .ok_or_else(|| "导入目录没有上级目录，无法定位同级文件夹".to_string())?;
+  let sibling_dir = parent.join(&sibling_folder_name);
+  let sibling_dir_canon = sibling_dir
+    .canonicalize()
+    .map_err(|e| format!("同级文件夹不可用（{}）: {e}", sibling_dir.display()))?;
+
+  let mut moved = 0usize;
+  let mut moved_entries: Vec<MoveEntry> = Vec::new();
+  let mut failed: Vec<MoveFailure> = Vec::new();
+
+  for path in photo_paths {
+    let src_path = PathBuf::from(&path);
+
+    let src_canon = match src_path.canonicalize() {
+      Ok(p) => p,
+      Err(e) => {
+        failed.push(MoveFailure {
+          path,
+          reason: format!("源文件不可用: {e}"),
+        });
+        continue;
+      }
+    };
+
+    if !src_canon.starts_with(&sibling_dir_canon) {
+      failed.push(MoveFailure {
+        path,
+        reason: "源文件不在“不想要”文件夹内，已跳过".to_string(),
+      });
+      continue;
+    }
+
+    let file_name = match src_canon.file_name() {
+      Some(n) => n.to_string_lossy().to_string(),
+      None => {
+        failed.push(MoveFailure {
+          path,
+          reason: "无法获取文件名".to_string(),
+        });
+        continue;
+      }
+    };
+
+    let dest_path = unique_dest_path(&import_dir_canon, &file_name);
+
+    match std::fs::rename(&src_canon, &dest_path) {
+      Ok(()) => {
+        moved += 1;
+        moved_entries.push(MoveEntry {
+          from: path,
+          to: dest_path.to_string_lossy().to_string(),
+        });
+      }
+      Err(rename_err) => match std::fs::copy(&src_canon, &dest_path) {
+        Ok(_) => match std::fs::remove_file(&src_canon) {
+          Ok(_) => {
+            moved += 1;
+            moved_entries.push(MoveEntry {
+              from: path,
+              to: dest_path.to_string_lossy().to_string(),
+            });
+          }
+          Err(e) => failed.push(MoveFailure {
+            path,
+            reason: format!("复制成功但删除源文件失败: {e}"),
+          }),
+        },
+        Err(copy_err) => failed.push(MoveFailure {
+          path,
+          reason: format!("移动失败: {rename_err}; 复制也失败: {copy_err}"),
+        }),
+      },
+    }
+  }
+
+  Ok(MoveResult {
+    moved,
+    moved_entries,
+    failed,
+  })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -257,7 +374,8 @@ pub fn run() {
       scan_directory,
       generate_thumbnail,
       export_photos,
-      move_photos_to_sibling_folder
+      move_photos_to_sibling_folder,
+      restore_photos_from_sibling_folder
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

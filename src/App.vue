@@ -13,7 +13,7 @@ import ImportButton from './components/layout/ImportButton.vue';
 import ImportDialog from './components/import/ImportDialog.vue';
 import HelpPanel from './components/help/HelpPanel.vue';
 import Button from './components/common/Button.vue';
-import { movePhotosToSiblingFolder } from './services/tauri/fileService';
+import { movePhotosToSiblingFolder, restorePhotosFromSiblingFolder } from './services/tauri/fileService';
 import { usePhotoStore } from './stores/photoStore';
 import { useUIStore } from './stores/uiStore';
 
@@ -33,6 +33,7 @@ const viewerHoldId = ref<string | null>(null);
 const pendingSelectAfterMove = ref<null | { id: string; sourceGroupId: string }>(null);
 const helpOpen = ref(true);
 const isMovingReject = ref(false);
+const isRestoringReject = ref(false);
 
 const photoStore = usePhotoStore();
 const uiStore = useUIStore();
@@ -48,6 +49,66 @@ const selectedPhoto = computed<Photo | null>(() => {
 });
 
 const canMoveReject = computed(() => !!photoStore.importDir && rejectPhotos.value.length > 0 && !isMovingReject.value);
+
+const canRestoreSelectedReject = computed(() => {
+  const p = selectedPhoto.value;
+  return !!photoStore.importDir && !!p && p.groupId === 'reject' && !!p.movedOut && !isRestoringReject.value;
+});
+
+async function restoreRejectPhoto(id: string) {
+  const importDir = photoStore.importDir;
+  if (!importDir) return;
+  const photo = photoStore.photos[id];
+  if (!photo || photo.groupId !== 'reject' || !photo.movedOut) return;
+
+  isRestoringReject.value = true;
+  try {
+    const result = await restorePhotosFromSiblingFolder([photo.path], importDir, '不想要');
+    console.info('[处理不选] 恢复结果', result);
+
+    const entry = result.moved_entries?.[0];
+    if (entry?.to) {
+      photoStore.updatePhoto(id, { path: entry.to, movedOut: false, groupId: 'default' });
+      uiStore.showNotification(
+        { type: 'success', title: '已恢复', message: '已从“不想要”恢复回默认分组' },
+        2000
+      );
+      return;
+    }
+
+    if (result.failed?.length) {
+      uiStore.showNotification(
+        { type: 'error', title: '恢复失败', message: result.failed[0]?.reason ?? '未知错误' },
+        3500
+      );
+    } else {
+      uiStore.showNotification(
+        { type: 'error', title: '恢复失败', message: '未收到恢复结果' },
+        3500
+      );
+    }
+  } catch (e) {
+    const details =
+      e instanceof Error
+        ? e.message
+        : typeof e === 'string'
+          ? e
+          : (() => {
+              try {
+                return JSON.stringify(e);
+              } catch {
+                return String(e);
+              }
+            })();
+    console.error('[处理不选] 恢复 invoke 抛错', e);
+    uiStore.showNotification(
+      { type: 'error', title: '恢复失败', message: details || '未知错误' },
+      4000
+    );
+  } finally {
+    isRestoringReject.value = false;
+  }
+}
 
 async function handleMoveRejectPhotos() {
   const importDir = photoStore.importDir;
@@ -81,16 +142,21 @@ async function handleMoveRejectPhotos() {
   });
 
   const paths = rejectList.map((p) => p.path);
+  const fromById = new Map(rejectList.map((p) => [p.id, p.path]));
 
   isMovingReject.value = true;
   try {
     const result = await movePhotosToSiblingFolder(paths, importDir, '不想要');
     console.info('[处理不选] 移动结果', result);
 
-    // 只从应用里移除成功移动的条目（失败的保留）
-    const failedSet = new Set(result.failed.map((f) => f.path));
-    const movedIds = rejectList.filter((p) => !failedSet.has(p.path)).map((p) => p.id);
-    if (movedIds.length > 0) photoStore.removePhotos(movedIds);
+    // 成功移动的照片：保留在“不选分组”，但更新 path 并打上“已移动”标记
+    const movedMap = new Map((result.moved_entries ?? []).map((e) => [e.from, e.to]));
+    for (const photo of rejectList) {
+      const to = movedMap.get(photo.path);
+      if (!to) continue;
+      const movedFromPath = fromById.get(photo.id) ?? photo.path;
+      photoStore.updatePhoto(photo.id, { path: to, movedOut: true, movedFromPath });
+    }
 
     if (result.failed.length > 0) {
       uiStore.showNotification(
@@ -318,7 +384,11 @@ onMounted(() => {
         if (photo && photo.groupId === 'default') {
           void movePhotoWithFly(photoStore.selectedId, 'reject');
         } else if (photo && photo.groupId === 'reject') {
-          void movePhotoWithFly(photoStore.selectedId, 'default');
+          if (photo.movedOut) {
+            void restoreRejectPhoto(photoStore.selectedId);
+          } else {
+            void movePhotoWithFly(photoStore.selectedId, 'default');
+          }
         }
         lastSpaceTime = 0;
       } else {
@@ -405,6 +475,17 @@ watch(
         @click="handleMoveRejectPhotos"
       >
         处理不选
+      </Button>
+    </div>
+    <div class="fixed top-4 left-[220px] z-50">
+      <Button
+        variant="secondary"
+        :disabled="!canRestoreSelectedReject"
+        :is-loading="isRestoringReject"
+        title="选中不选分组里已移动的照片，双击空格可恢复"
+        @click="photoStore.selectedId && restoreRejectPhoto(photoStore.selectedId)"
+      >
+        恢复已移动
       </Button>
     </div>
 

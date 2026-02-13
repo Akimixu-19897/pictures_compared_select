@@ -12,6 +12,8 @@ export interface Photo {
   thumbnailUrl?: string;
   groupId: string;
   isSelected: boolean;
+  movedOut?: boolean;
+  movedFromPath?: string;
 }
 
 export interface PhotoInfo {
