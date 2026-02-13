@@ -40,6 +40,7 @@ async function handleImport(path: string) {
     }
 
     progress.value = { current: 0, total: photos.length };
+    photoStore.setImportDir(path);
     photoStore.addPhotos(photos, 'default');
 
     for (let i = 0; i <= photos.length; i += Math.ceil(photos.length / 10)) {

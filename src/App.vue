@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { gsap } from 'gsap';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import type { Photo } from './types';
 import DefaultGroupPanel from './components/layout/DefaultGroupPanel.vue';
 import RejectGroupPanel from './components/layout/RejectGroupPanel.vue';
@@ -11,6 +12,8 @@ import CompareViewer from './components/compare/CompareViewer.vue';
 import ImportButton from './components/layout/ImportButton.vue';
 import ImportDialog from './components/import/ImportDialog.vue';
 import HelpPanel from './components/help/HelpPanel.vue';
+import Button from './components/common/Button.vue';
+import { movePhotosToSiblingFolder } from './services/tauri/fileService';
 import { usePhotoStore } from './stores/photoStore';
 import { useUIStore } from './stores/uiStore';
 
@@ -29,6 +32,7 @@ const flyItemEl = ref<HTMLDivElement | null>(null);
 const viewerHoldId = ref<string | null>(null);
 const pendingSelectAfterMove = ref<null | { id: string; sourceGroupId: string }>(null);
 const helpOpen = ref(true);
+const isMovingReject = ref(false);
 
 const photoStore = usePhotoStore();
 const uiStore = useUIStore();
@@ -42,6 +46,70 @@ const selectedPhoto = computed<Photo | null>(() => {
   if (!id) return null;
   return photoStore.photos[id] ?? null;
 });
+
+const canMoveReject = computed(() => !!photoStore.importDir && rejectPhotos.value.length > 0 && !isMovingReject.value);
+
+async function handleMoveRejectPhotos() {
+  const importDir = photoStore.importDir;
+  if (!importDir) {
+    uiStore.showNotification(
+      { type: 'error', title: '无法处理不选', message: '请先导入一个文件夹' },
+      2500
+    );
+    return;
+  }
+
+  const rejectList = rejectPhotos.value.slice();
+  if (rejectList.length === 0) {
+    uiStore.showNotification(
+      { type: 'info', title: '没有不选照片', message: '不选分组为空，无需移动' },
+      1800
+    );
+    return;
+  }
+
+  const ok = await confirm(
+    `将“不选分组”的 ${rejectList.length} 张照片移动到导入文件夹同级的“不想要”文件夹？\n\n该操作会移动原文件，建议先确认已分完。`,
+    { title: '处理不选照片', kind: 'warning' }
+  );
+  if (!ok) return;
+
+  const paths = rejectList.map((p) => p.path);
+
+  isMovingReject.value = true;
+  try {
+    const result = await movePhotosToSiblingFolder(paths, importDir, '不想要');
+
+    // 只从应用里移除成功移动的条目（失败的保留）
+    const failedSet = new Set(result.failed.map((f) => f.path));
+    const movedIds = rejectList.filter((p) => !failedSet.has(p.path)).map((p) => p.id);
+    if (movedIds.length > 0) photoStore.removePhotos(movedIds);
+
+    if (result.failed.length > 0) {
+      uiStore.showNotification(
+        {
+          type: 'warning',
+          title: '部分移动失败',
+          message: `已移动 ${result.moved} 张，失败 ${result.failed.length} 张（可在控制台查看原因）`,
+        },
+        4000
+      );
+      console.warn('Move failed list:', result.failed);
+    } else {
+      uiStore.showNotification(
+        { type: 'success', title: '处理完成', message: `已移动 ${result.moved} 张到“不想要”文件夹` },
+        3000
+      );
+    }
+  } catch (e) {
+    uiStore.showNotification(
+      { type: 'error', title: '移动失败', message: e instanceof Error ? e.message : '未知错误' },
+      4000
+    );
+  } finally {
+    isMovingReject.value = false;
+  }
+}
 
 function escapeSelector(value: string) {
   const css = (globalThis as unknown as { CSS?: { escape?: (value: string) => string } }).CSS;
@@ -308,6 +376,17 @@ watch(
     </div>
 
     <ImportButton @click="isImportOpen = true" />
+    <div class="fixed top-4 left-[108px] z-50">
+      <Button
+        variant="danger"
+        :disabled="!canMoveReject"
+        :is-loading="isMovingReject"
+        title="将不选分组的照片移到同级“不想要”文件夹"
+        @click="handleMoveRejectPhotos"
+      >
+        处理不选
+      </Button>
+    </div>
 
     <ImportDialog
       :is-open="isImportOpen"

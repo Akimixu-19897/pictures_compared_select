@@ -6,6 +6,7 @@ interface PhotoState {
   photos: Record<string, Photo>;
   selectedIds: string[];
   selectedId: string | null;
+  importDir: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -14,6 +15,7 @@ const initialState: PhotoState = {
   photos: {},
   selectedIds: [],
   selectedId: null,
+  importDir: null,
   loading: false,
   error: null,
 };
@@ -34,6 +36,9 @@ export const usePhotoStore = defineStore('photo', {
     },
   },
   actions: {
+    setImportDir(path: string | null) {
+      this.importDir = path;
+    },
     addPhotos(photoInfos: PhotoInfo[], groupId: string = 'default') {
       for (const info of photoInfos) {
         const photo: Photo = {

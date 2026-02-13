@@ -54,9 +54,37 @@ export async function exportPhotos(
   targetPath: string
 ): Promise<boolean> {
   try {
-    return await invoke('export_photos', { photoPaths, targetPath });
+    return await invoke('export_photos', {
+      photo_paths: photoPaths,
+      target_path: targetPath,
+    });
   } catch (error) {
     console.error('Failed to export photos:', error);
+    throw error;
+  }
+}
+
+export type MovePhotosResult = {
+  moved: number;
+  failed: Array<{ path: string; reason: string }>;
+};
+
+/**
+ * Move rejected photos out of the imported folder into a sibling folder.
+ */
+export async function movePhotosToSiblingFolder(
+  photoPaths: string[],
+  importDir: string,
+  siblingFolderName: string
+): Promise<MovePhotosResult> {
+  try {
+    return await invoke('move_photos_to_sibling_folder', {
+      photo_paths: photoPaths,
+      import_dir: importDir,
+      sibling_folder_name: siblingFolderName,
+    });
+  } catch (error) {
+    console.error('Failed to move photos:', error);
     throw error;
   }
 }
