@@ -38,6 +38,7 @@ watch(
 );
 
 function onPanelTransitionEnd(e: TransitionEvent) {
+  if (e.target !== e.currentTarget) return;
   if (e.propertyName !== 'width') return;
   if (props.open) showBody.value = true;
 }
@@ -45,17 +46,21 @@ function onPanelTransitionEnd(e: TransitionEvent) {
 
 <template>
   <div
-    class="fixed left-1/2 bottom-4 -translate-x-1/2 z-50"
-    :class="isWide ? 'w-[min(900px,calc(100vw-32px))]' : 'w-[56px]'"
+    class="fixed left-1/2 bottom-4 -translate-x-1/2 z-50 transition-[width] duration-300 ease-out"
+    :class="isWide ? 'w-[min(900px,calc(100vw-32px))]' : 'w-[160px]'"
+    @transitionend="onPanelTransitionEnd"
   >
     <div
-      class="bg-surface/95 border border-border shadow-2xl backdrop-blur-md overflow-hidden transition-[width,border-radius] duration-300 ease-out"
+      class="bg-surface/95 border border-border shadow-2xl backdrop-blur-md overflow-hidden transition-[border-radius] duration-300 ease-out"
       :class="props.open ? 'rounded-xl' : 'rounded-full'"
-      @transitionend="onPanelTransitionEnd"
     >
       <button
-        class="w-full flex items-center justify-between text-left hover:bg-surface-light/40 transition-colors"
-        :class="props.open ? 'px-4 py-3' : 'px-0 py-0 h-14 w-14 justify-center'"
+        class="w-full flex items-center text-left hover:bg-surface-light/40 transition-colors"
+        :class="
+          props.open
+            ? 'justify-between px-4 py-3'
+            : 'justify-center gap-2 px-3 py-2'
+        "
         @click="emit('toggle')"
         :title="props.open ? undefined : '使用说明'"
       >
@@ -79,18 +84,21 @@ function onPanelTransitionEnd(e: TransitionEvent) {
         </template>
 
         <template v-else>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            class="w-6 h-6 text-text-primary"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.5 1.748l.383 6.832-1.313.077-.384-6.832c-.021-.376-.314-.638-.632-.479-1.155.577-2.472-.465-2.539-1.786l-.065-1.166 1.313-.077.065 1.166c.012.213.168.363.372.417zM12 6.75a.75.75 0 110 1.5.75.75 0 010-1.5z"
-              clip-rule="evenodd"
-            />
-          </svg>
+          <div class="flex items-center gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="w-5 h-5 text-text-primary"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.5 1.748l.383 6.832-1.313.077-.384-6.832c-.021-.376-.314-.638-.632-.479-1.155.577-2.472-.465-2.539-1.786l-.065-1.166 1.313-.077.065 1.166c.012.213.168.363.372.417zM12 6.75a.75.75 0 110 1.5.75.75 0 010-1.5z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="text-sm font-medium text-text-primary">使用说明</span>
+          </div>
         </template>
       </button>
 
