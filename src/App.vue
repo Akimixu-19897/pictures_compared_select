@@ -70,15 +70,22 @@ async function handleMoveRejectPhotos() {
 
   const ok = await confirm(
     `将“不选分组”的 ${rejectList.length} 张照片移动到导入文件夹同级的“不想要”文件夹？\n\n该操作会移动原文件，建议先确认已分完。`,
-    { title: '处理不选照片', kind: 'warning' }
+    { title: '处理不选照片', kind: 'warning', okLabel: '确定', cancelLabel: '取消' }
   );
   if (!ok) return;
+
+  console.info('[处理不选] 用户确认开始移动', {
+    importDir,
+    count: rejectList.length,
+    sample: rejectList.slice(0, 5).map((p) => ({ name: p.name, path: p.path })),
+  });
 
   const paths = rejectList.map((p) => p.path);
 
   isMovingReject.value = true;
   try {
     const result = await movePhotosToSiblingFolder(paths, importDir, '不想要');
+    console.info('[处理不选] 移动结果', result);
 
     // 只从应用里移除成功移动的条目（失败的保留）
     const failedSet = new Set(result.failed.map((f) => f.path));
@@ -90,11 +97,11 @@ async function handleMoveRejectPhotos() {
         {
           type: 'warning',
           title: '部分移动失败',
-          message: `已移动 ${result.moved} 张，失败 ${result.failed.length} 张（可在控制台查看原因）`,
+          message: `已移动 ${result.moved} 张，失败 ${result.failed.length} 张（控制台有详细原因）`,
         },
         4000
       );
-      console.warn('Move failed list:', result.failed);
+      console.warn('[处理不选] 失败列表', result.failed);
     } else {
       uiStore.showNotification(
         { type: 'success', title: '处理完成', message: `已移动 ${result.moved} 张到“不想要”文件夹` },
@@ -102,8 +109,21 @@ async function handleMoveRejectPhotos() {
       );
     }
   } catch (e) {
+    const details =
+      e instanceof Error
+        ? e.message
+        : typeof e === 'string'
+          ? e
+          : (() => {
+              try {
+                return JSON.stringify(e);
+              } catch {
+                return String(e);
+              }
+            })();
+    console.error('[处理不选] invoke 抛错', e);
     uiStore.showNotification(
-      { type: 'error', title: '移动失败', message: e instanceof Error ? e.message : '未知错误' },
+      { type: 'error', title: '移动失败', message: details || '未知错误' },
       4000
     );
   } finally {
